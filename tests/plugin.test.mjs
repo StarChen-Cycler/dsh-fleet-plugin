@@ -4,19 +4,28 @@
 // validates, and the supervisor stays inert when disabled.
 import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { apply } from '../plugin/index.mjs';
 
 function makeCtx() {
   const routes = [];
+  const cleanups = [];
   const webServer = {
     register: (route) => { routes.push(route); return () => {}; },
   };
   const ctx = {
     get: (n, _strict) => (n === 'webServer' ? webServer : undefined),
-    effect: (cb) => { cb(); return () => {}; },
+    effect: (cb) => {
+      const cleanup = cb();
+      if (typeof cleanup === 'function') cleanups.push(cleanup);
+      return () => {};
+    },
+  };
+  ctx.disposeAll = () => {
+    for (const c of cleanups) { try { c(); } catch { /* best-effort */ } }
+    cleanups.length = 0;
   };
   return { routes, ctx };
 }
@@ -109,6 +118,46 @@ test('supervisor stays inert when disabled and reports a missing binary when ena
     apply(ctx); // must not throw and must not spawn anything
     assert.ok(!existsSync(join(home, 'no-such-frpc')));
     assert.ok(routes.length >= 3);
+  } finally {
+    if (prev === undefined) delete process.env.DSH_HOME; else process.env.DSH_HOME = prev;
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+// Real-binary test (skipped on CI machines without frpc): a frpc pointed at a
+// dead hub exits on its own — the supervisor must restart it with backoff, and
+// the plugin dispose must kill it for good.
+const REAL_FRPC = join(homedir(), '.dsh-fleet', 'frpc-0.71.0', process.platform === 'win32' ? 'frpc.exe' : 'frpc');
+
+test('supervisor restarts a dying frpc with backoff and dispose stops it', { skip: !existsSync(REAL_FRPC) }, async () => {
+  const home = join(tmpdir(), `dsh-fleet-test-${Date.now()}`);
+  mkdirSync(home, { recursive: true });
+  writeFileSync(join(home, 'dsh-fleet.json'), JSON.stringify({
+    enabled: true, manageFrpc: true, frpcPath: REAL_FRPC,
+    token: 'b'.repeat(32), slug: 'backoff-test', port: '6199',
+    hubUrl: '127.0.0.1:7000', restartBackoffSec: 1,
+  }));
+  const prev = process.env.DSH_HOME;
+  process.env.DSH_HOME = home;
+  try {
+    const { routes, ctx } = makeCtx();
+    apply(ctx); // ctx.effect captured cb — apply's own ctx.effect call returns it
+    const statusRoute = routes.find((r) => r.path === '/api/dsh-fleet/status');
+
+    // frpc cannot reach 127.0.0.1:7000 → it exits → supervisor restarts.
+    const deadline = Date.now() + 9000;
+    let restarts = 0;
+    while (Date.now() < deadline) {
+      const res = await call(statusRoute.handler);
+      restarts = res.body.restarts || 0;
+      if (restarts >= 1) break;
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    assert.ok(restarts >= 1, `supervisor restarted a dying frpc (got restarts=${restarts})`);
+
+    ctx.disposeAll(); // plugin stop: dispose must kill the child for good
+    const after = await call(statusRoute.handler);
+    assert.equal(after.body.frpcRunning, false);
   } finally {
     if (prev === undefined) delete process.env.DSH_HOME; else process.env.DSH_HOME = prev;
     rmSync(home, { recursive: true, force: true });
