@@ -20,8 +20,10 @@
 
 ## 枢纽主：15 分钟搭门户
 
-前置：国内轻量 VPS（≥2C2G，Debian 12，安全组放行 TCP 22/7000/8443）+ 一个域名
-（通配 `*.hub.example.com` 解析到 VPS）。选型参考 [docs/vps-selection.md](docs/vps-selection.md)。
+前置：国内轻量 VPS（≥2C2G，Debian 12 / Ubuntu 22.04+，安全组放行 TCP 22/7000/8443）+ 一个域名
+（通配 `*.hub.example.com` 解析到 VPS）。选型参考 [docs/vps-selection.md](docs/vps-selection.md)；
+**国内节点**用 `--dns tencentcloud|alidns`（DNS-01 免 80 端口），额外配置见
+[docs/mainland-china.md](docs/mainland-china.md)。
 
 ```bash
 # 在 VPS 上（root）
