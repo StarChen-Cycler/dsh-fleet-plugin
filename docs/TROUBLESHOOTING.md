@@ -114,3 +114,19 @@ curl --http1.1 ... https://<slug>.<域名>:8443/api/events.mux  # ③ 经 Caddy 
 # 替换 hub/fleet.d/00-base.caddy 与每个 10-<slug>.caddy 里的 fleet <hash>，
 # 然后 systemctl reload caddy。节点不受影响（密码只挡在 Caddy 层）。
 ```
+
+## 新节点 enroll 后：WS 无 Cookie 也 101 / settings.describe 403
+
+**现象**（2026-08 在 a6000 上实测）：enroll 成功、页面能开，但 WS 无 Cookie 得到 101
+（门闸形同虚设）、特权方法 403——说明该节点片段是**旧模板**写的。
+
+**根因**：仓库的 `hub/enroll.sh` 更新了（cookie 门闸 f289f92、Host 改写 2aa091d），
+但**枢纽上跑的副本没有同步**——enroll 用的是 `<hub 目录>/enroll.sh` 的本地副本，
+模板漂移直接遗传给新片段。
+
+**修复**：把仓库当前 `hub/enroll.sh`、`hub/hub-setup.sh` 重新 scp 到枢纽目录，
+并按 `enroll.sh` 里的新模板重写该节点的 `10-<slug>.caddy`（或删片段重新 enroll），
+`caddy validate` 后 reload。
+
+**预防**：改了仓库 `hub/` 下的脚本，**同一个 commit 里必须包含枢纽同步动作**
+（scp + 抽查标记位，如 `grep -c header_up <hub>/enroll.sh` 应 ≥ 2）。
