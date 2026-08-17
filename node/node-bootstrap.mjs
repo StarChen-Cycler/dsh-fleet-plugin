@@ -16,7 +16,7 @@ import {
   chmodSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, statSync, writeFileSync,
 } from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const FRP_VERSION = '0.71.0';
@@ -197,6 +197,54 @@ function stopFrpc() {
   }
 }
 
+// ── step 06b: pin the in-app directory browser (portal workspace picking) ──
+// The stock composition mounts directory-picker-auto, which resolves "native"
+// on any desktop (loopback bind + local display) — an OS dialog a remote
+// browser cannot see. Pin the browse backend+surface in the profile's own
+// patch layer: host.listDirectory/createDirectory are NOT privileged methods,
+// so the picker works through any trusted entry regardless of launch method.
+const PROFILE_PATCH = join(process.env.DSH_HOME || join(homedir(), '.dsh'), 'profiles', 'web', 'cordis.patch.yml');
+const PICKER_OVERLAY = `
+# Pinned by dsh-fleet node-bootstrap (step 06b): in-app directory browser, so
+# the workspace picker works through the portal.
+- id: directory-picker
+  disabled: true
+- insert:
+    - id: directory-picker-browse
+      name: '@deepseek-ai/dsh-host-directory-picker-browse'
+    - id: directory-picker-browse-surface
+      name: '@deepseek-ai/dsh-client-ui-directory-picker-browse'
+`;
+// Pure patch computation, exported for tests: returns { text, changed }.
+function applyPickerPatch(existing) {
+  if (existing.includes('dsh-host-directory-picker-browse')) return { text: existing, changed: false };
+  const stripped = existing.replace(/^\s*\[\]\s*$/m, '').trimEnd();
+  const first = stripped.split('\n').find((l) => l.trim() !== '');
+  if (first !== undefined && !/^\s*(#|-)/.test(first)) {
+    throw new Error('profile patch is not a comment/array document');
+  }
+  const header = stripped === '' ? '# dsh profile patch layer (created by dsh-fleet node-bootstrap).\n' : `${stripped}\n`;
+  return { text: header + PICKER_OVERLAY, changed: true };
+}
+function pinBrowsePicker() {
+  const existing = existsSync(PROFILE_PATCH) ? readFileSync(PROFILE_PATCH, 'utf8') : '';
+  let result;
+  try {
+    result = applyPickerPatch(existing);
+  } catch (error) {
+    fail('06b: profile patch shape', `${error.message} — pin the rows manually per docs/trusted-host.md`);
+  }
+  if (!result.changed) { log('PASS  06b: browse picker already pinned — idempotent'); return; }
+  mkdirSync(dirname(PROFILE_PATCH), { recursive: true });
+  writeFileSync(PROFILE_PATCH, result.text);
+  const after = readFileSync(PROFILE_PATCH, 'utf8');
+  gate('06b: browse picker pinned in the web profile patch',
+    after.includes('dsh-host-directory-picker-browse')
+      && after.includes('dsh-client-ui-directory-picker-browse')
+      && /id: directory-picker\n\s+disabled: true/.test(after),
+    PROFILE_PATCH);
+}
+
 // ── step 07: autostart service (Windows WinSW / macOS launchd / Linux systemd --user) ──
 function fill(tplPath, map) {
   let text = readFileSync(join(HERE, tplPath), 'utf8');
@@ -263,13 +311,21 @@ function uninstallService() {
 }
 
 // ── main ──────────────────────────────────────────────────────────────────
-const args = parseArgs(process.argv.slice(2));
-if (args.install) installService();
-if (args.uninstall) uninstallService();
-preflight(args);
-const asset = assetName();
-const archive = download(asset);
-extract(archive, asset);
-writeConfig(args);
-startFrpc(args);
-log('node joined the fleet. Next:  node node-bootstrap.mjs --install-service');
+const isMain = (() => {
+  try { return process.argv[1] !== undefined && fileURLToPath(import.meta.url) === resolve(process.argv[1]); } catch { return false; }
+})();
+if (isMain) {
+  const args = parseArgs(process.argv.slice(2));
+  if (args.install) installService();
+  if (args.uninstall) uninstallService();
+  preflight(args);
+  const asset = assetName();
+  const archive = download(asset);
+  extract(archive, asset);
+  writeConfig(args);
+  startFrpc(args);
+  pinBrowsePicker();
+  log('node joined the fleet. Next:  node node-bootstrap.mjs --install-service');
+  log('if DSH is already running, restart it (dsh-fleet web) to load the picker overlay');
+}
+export { applyPickerPatch, pinBrowsePicker };

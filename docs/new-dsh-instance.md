@@ -44,6 +44,11 @@ node dsh-fleet-plugin/node/node-bootstrap.mjs "HUB=... TOKEN=... SLUG=... PORT=.
 `~/.dsh-fleet/` → 生成 `frpc.toml` → 启动并等「login to server success」。
 （PowerShell 解压依赖 Expand-Archive；Linux/macOS 用系统 tar。）
 
+step 06b 还会把**应用内目录选择器**钉进 web 配置的补丁层——远程点「选择工作区」
+时打开的是网页内的目录树，而不是弹在宿主机屏幕上的系统对话框（原理与旧节点的
+手动写法见 [trusted-host.md](trusted-host.md)「远程选择工作区」节）。已在跑 DSH
+的节点重启后生效。
+
 ## 6. 启动 DSH（带 trusted-host）
 
 ```bash

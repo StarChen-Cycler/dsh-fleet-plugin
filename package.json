@@ -1,6 +1,6 @@
 {
   "name": "dsh-fleet-plugin",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Fleet portal bundle for DeepSeek Harness: join any DSH instance to a hub for remote command from one web portal.",
   "license": "MIT",
   "main": "./plugin/index.mjs",

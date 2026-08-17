@@ -80,3 +80,26 @@ reverse_proxy 127.0.0.1:${PORT} {
 
 实测（2026-08，home-pc 节点）：带 basic_auth POST `/api/settings.describe` → 200；
 伪造 Origin → 仍 200（已剥离）；无凭据 → 401；WS 无 Cookie → 401、带 Cookie → 101。
+
+## 远程选择工作区：应用内目录浏览器（bootstrap 06b 自动钉入）
+
+`host.pickDirectory` 弹的是**宿主机本地 OS 对话框**——远程浏览器看不见也点不到。
+组合默认挂 `directory-picker-auto`：桌面 Windows/macOS 永远判 native，本地好用、
+远程无用。DSH 官方为此留了 browse 后端（`host.listDirectory`/`createDirectory`，
+**不在特权清单**）。node-bootstrap 的 step 06b 会把下面这段幂等写进
+`~/.dsh/profiles/web/cordis.patch.yml`（旧节点可手动写入，重启 DSH 生效）：
+
+```yaml
+- id: directory-picker
+  disabled: true
+- insert:
+    - id: directory-picker-browse
+      name: '@deepseek-ai/dsh-host-directory-picker-browse'
+    - id: directory-picker-browse-surface
+      name: '@deepseek-ai/dsh-client-ui-directory-picker-browse'
+```
+
+效果：点「选择工作区」打开网页内目录树（可浏览/新建文件夹），手机与任意浏览器
+可用。实测（a6000，经门户）：`host.listDirectory` 200 且返回 crumbs+entries；
+`pickDirectory` 明确报「composed picker serves browse」——native 已关闭、栅栏放行。
+两包在 auto 的依赖闭包里，无需新下载；补丁在用户 profile 层，升级 DSH 不冲掉。
