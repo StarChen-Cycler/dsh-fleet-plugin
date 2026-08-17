@@ -1,0 +1,61 @@
+/* dsh-fleet portal — dark, mobile-first. Works at 375px and up. */
+:root {
+  --bg: #0d1117;
+  --panel: #161b22;
+  --border: #30363d;
+  --text: #e6edf3;
+  --muted: #8b949e;
+  --ok: #10b981;
+  --off: #f43f5e;
+  --accent: #00d4ff;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+.top {
+  padding: 20px 16px 8px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
+}
+.brand { margin: 0; font-size: 20px; }
+.sub { color: var(--muted); font-size: 12px; font-family: ui-monospace, Consolas, monospace; }
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+  padding: 12px 16px 24px;
+}
+.card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+  cursor: pointer;
+  text-decoration: none;
+  color: inherit;
+  display: block;
+  transition: border-color .15s ease;
+}
+.card:hover { border-color: var(--accent); }
+.card.offline { opacity: .55; cursor: default; }
+.card.offline:hover { border-color: var(--border); }
+.card-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+.dot.on { background: var(--ok); box-shadow: 0 0 6px rgba(16,185,129,.8); }
+.dot.off { background: var(--off); }
+.node-name { font-weight: 600; font-size: 15px; }
+.node-slug { color: var(--muted); font-size: 12px; font-family: ui-monospace, Consolas, monospace; }
+.metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.metric { border: 1px solid var(--border); border-radius: 8px; padding: 8px; text-align: center; }
+.metric-label { color: var(--muted); font-size: 11px; }
+.metric-value { font-size: 16px; font-weight: 600; margin-top: 2px; font-variant-numeric: tabular-nums; }
+.metric-unit { color: var(--muted); font-size: 10px; }
+.meta { margin-top: 10px; color: var(--muted); font-size: 12px; }
+.hint { grid-column: 1 / -1; color: var(--muted); }
+.foot { padding: 0 16px 20px; color: var(--muted); font-size: 11px; }
