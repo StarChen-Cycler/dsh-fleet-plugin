@@ -107,25 +107,33 @@ cat > "${FRAG_DIR}/10-${SLUG}.caddy" <<EOF
 ${SLUG}.${DOMAIN}:8443 {
 ${TLS_BLOCK}
 
-	# WebSocket upgrades MUST bypass basic_auth: browsers do not attach HTTP
-	# auth credentials to WS handshakes (WHATWG fetch #565), so auth on the
-	# upgrade path breaks every browser client. DSH's own /api trust fence
-	# still gates the stream; residual risk documented in SECURITY.md.
-	@ws {
-		header Connection *Upgrade*
-		header Upgrade websocket
-	}
-	handle @ws {
-		reverse_proxy 127.0.0.1:${PORT}
-	}
-
-	# Everything else (REST/static) stays behind the portal password.
-	handle {
-		basic_auth {
-			fleet ${PW_HASH}
+	# WS auth via an origin cookie: browsers attach same-origin cookies to WS
+	# handshakes but never HTTP auth (WHATWG fetch #565). Any successful
+	# basic-auth REST call sets the cookie; upgrades without it get 401.
+	route {
+		@wsauth {
+			header Connection *Upgrade*
+			header Upgrade websocket
+			header Cookie *dshfleet_ws={env.WS_COOKIE_SECRET}*
+		}
+		handle @wsauth {
+			reverse_proxy 127.0.0.1:${PORT}
+		}
+		@ws {
+			header Connection *Upgrade*
+			header Upgrade websocket
+		}
+		handle @ws {
+			respond 401
 		}
 
-		reverse_proxy 127.0.0.1:${PORT}
+		handle {
+			basic_auth {
+				fleet ${PW_HASH}
+			}
+			header Set-Cookie "dshfleet_ws={env.WS_COOKIE_SECRET}; Path=/; Secure; HttpOnly; SameSite=Lax"
+			reverse_proxy 127.0.0.1:${PORT}
+		}
 	}
 }
 EOF

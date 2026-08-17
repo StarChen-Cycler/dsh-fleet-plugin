@@ -247,6 +247,14 @@ if [[ ! -f "$FLEET_ENV" || $FORCE -eq 1 ]]; then
   } > "$FLEET_ENV"
   chmod 600 "$FLEET_ENV"
 fi
+# WS cookie secret: gates the browser WebSocket stream (enroll fragments check
+# for it). Generated once; never rotated by re-runs (same ownership rule as
+# the portal password — node fragments reference it).
+if ! grep -q '^WS_COOKIE_SECRET=' "$FLEET_ENV" 2>/dev/null; then
+  echo "WS_COOKIE_SECRET=$(openssl rand -hex 16)" >> "$FLEET_ENV"
+  chmod 600 "$FLEET_ENV"
+  log "       generated WS cookie secret into ${FLEET_ENV}"
+fi
 
 PW_HASH_ESC="${PW_HASH//\$/\\$}"
 TPL="$(dirname "$0")/caddy-00-base.caddy.tpl"

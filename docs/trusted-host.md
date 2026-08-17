@@ -37,14 +37,17 @@ hubUrl/slug，自动推导该 authority 并加上它；无配置时退化为普�
 - 不要对不可信网络声明 `--trusted-host 0.0.0.0` 之类的宽泛条目；只声明你的节点
   authority（精确 `host:port`）。
 
-## WebSocket 豁免（浏览器的 WS 不带 HTTP 认证）
+## WebSocket 认证：Cookie 门闸（已闭环）
 
-浏览器（Chrome/QuarkPC 等）的 WebSocket 握手**不携带** basic-auth 凭据
-（[WHATWG fetch #565](https://github.com/whatwg/fetch/issues/565)），因此节点片段
-对升级请求（`Connection: Upgrade` + `Upgrade: websocket`）豁免 basic_auth——
-否则所有浏览器的 WS 长连接都会被 401 拒掉。
+浏览器（Chrome/QuarkPC 等）的 WebSocket 握手**不携带** HTTP 认证凭据
+（[WHATWG fetch #565](https://github.com/whatwg/fetch/issues/565)），但**会携带同源
+Cookie**。节点片段因此这样工作：
 
-残余风险：**不带门户密码的人**可打开节点的 DSH 事件流（`/api/events.mux` 等只读
-流）。影响面：只读事件（会话活动通知）；REST（写操作）与特权面仍分别由 basic_auth
-与 DSH 栅栏保护。若你的子域会公开到不可信环境，建议额外加 IP 白名单（Caddy
-`remote_ip` matcher）或短期关站。
+1. 用户通过 basic_auth 的任一 REST 请求成功后，Caddy 在响应里
+   `Set-Cookie: dshfleet_ws=<随机密钥>; Secure; HttpOnly; SameSite=Lax`。
+2. WS 握手是同源请求，浏览器自动附上该 Cookie → Caddy 校验密钥 → 101 放行。
+3. 无 Cookie 的升级请求 → 401。密钥存枢纽 `/etc/caddy/fleet.env`（root-only 600），
+   轮换 = 改密钥 + `systemctl reload caddy`。
+
+效果：未认证攻击者拿不到任何 WS 流；REST 写操作与特权面仍分别由 basic_auth 与
+DSH 栅栏保护；手机端不受 IP 变化影响。
