@@ -287,6 +287,9 @@ After=network.target
 [Service]
 Type=simple
 ExecStart=${CADDY_BIN} run --config ${CADDY_ETC}/Caddyfile
+# Graceful reload via SIGUSR1 — the `caddy reload` CLI needs the admin API,
+# which this deployment disables (`admin off` in the Caddyfile).
+ExecReload=/bin/kill -USR1 \$MAINPID
 Restart=on-failure
 RestartSec=5
 EnvironmentFile=${FLEET_ENV}

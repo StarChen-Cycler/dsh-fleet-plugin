@@ -77,6 +77,35 @@ journalctl -u caddy -n 30       # 看 acme 报错
   - 节点：`~/.dsh-fleet/frp_0.71.0_<os>_<arch>.tar.gz|zip`
   - 枢纽：先 `apt install golang-go`，`GOPROXY=https://goproxy.cn,direct go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest`
 
+## 远程访问时的控制台 403 与 WS 报错
+
+**现象**（从门户打开节点 DSH 后浏览器控制台）：
+
+- `POST /api/settings.describe 403`、`/api/credentials.describe 403`、部分插件配置
+  （如 modlens/config）403——**这是设计内的特权锁**：设置/凭据/原生对话框只允许本机
+  回环，远程会话面不受影响。设置页在远程打开会是空的，属预期。
+- `WebSocket ... failed / connection lost, retry #N`——若出现在**节点 DSH 刚重启后**，
+  是启动窗口期的瞬时抖动，客户端会自动重连；持续失败才需要排查（见下）。
+
+**持续 WS 失败排查**：curl 分层验证（每层都该是 101）：
+
+```bash
+curl --http1.1 -i -N -H "Connection: Upgrade" -H "Upgrade: websocket" \
+  -H "Sec-WebSocket-Version: 13" -H "Sec-WebSocket-Key: x3JJHMbDL1EzLkh9GBhXDw==" \
+  http://127.0.0.1:3080/api/events.mux                    # ① 节点本机 DSH
+curl --http1.1 ... http://127.0.0.1:<port>/api/events.mux # ② 枢纽直打 frps remotePort
+curl --http1.1 ... https://<slug>.<域名>:8443/api/events.mux  # ③ 经 Caddy 完整链路
+```
+
+注意必须 `--http1.1`：curl 默认对 https 走 h2，而升级只在 HTTP/1.1 上发生——走 h2
+拿到 426 是测试假象，浏览器本身永远用 h1.1 做 WS 握手。
+
+## 工作区历史偶尔加载失败
+
+大会话（几十 MB 的历史）经枢纽隧道加载时慢于本机，客户端超时/重试会表现为偶发失败。
+这不是配置错误；缓解：历史按需分页加载（DSH 自身行为），或需要整段历史时在本机打开。
+隧道带宽由 VPS 决定（轻量 4Mbps 已够流式文本，大文件传输另计）。
+
 ## 密码轮换（门户）
 
 ```bash
