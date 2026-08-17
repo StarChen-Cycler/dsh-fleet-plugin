@@ -1,0 +1,14 @@
+# Octie task graph + runtime artifacts
+.octie/
+
+# Node
+node_modules/
+*.log
+
+# frp binaries cached by bootstrap (downloaded at runtime)
+~/.dsh-fleet/
+node/bin/frpc*
+
+# OS cruft
+.DS_Store
+Thumbs.db

@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  ci:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Shell templates: syntax-check on Linux (the only platform with bash).
+      - name: Bash syntax check (hub templates)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          for f in hub/*.sh; do
+            [ -f "$f" ] && bash -n "$f"
+          done
+
+      # JavaScript / ESM entry points: parse-check everywhere.
+      - name: Node syntax check
+        shell: bash
+        run: |
+          set -o pipefail
+          files=$(find . -name '*.mjs' -not -path './node_modules/*' -not -path './.git/*' 2>/dev/null || true)
+          if [ -n "$files" ]; then
+            for f in $files; do node --check "$f"; done
+          fi
+
+      # Unit tests: run when a tests/ directory exists.
+      - name: Unit tests
+        shell: bash
+        run: |
+          if [ -f package.json ]; then
+            npm install
+            if [ -d tests ]; then
+              npx vitest run --reporter=dot
+            fi
+          fi
