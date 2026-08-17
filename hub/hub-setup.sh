@@ -253,9 +253,12 @@ TPL="$(dirname "$0")/caddy-00-base.caddy.tpl"
 export SETUP_DOMAIN="$DOMAIN" SETUP_TLS_MODE="$DNS_PROVIDER" SETUP_DNS_ENV_ID="$DNS_ENV_ID" \
        SETUP_DNS_ENV_KEY="$DNS_ENV_KEY" SETUP_PW_HASH="$PW_HASH" SETUP_TLS_BLOCK="$TLS_BLOCK"
 python3 - "$TPL" "${FRAG_DIR}/00-base.caddy" <<'PYEOF'
-import os, sys
+import os, re, sys
 tpl, out = sys.argv[1], sys.argv[2]
 text = open(tpl).read()
+if os.environ["SETUP_TLS_MODE"] == "http":
+    # wildcard certs are impossible over HTTP-01 — drop the fallback block
+    text = re.sub(r"# __WILDCARD_BEGIN__.*# __WILDCARD_END__\n?", "", text, flags=re.S)
 for key, value in (
     ("__DOMAIN__", os.environ["SETUP_DOMAIN"]),
     ("__TLS_MODE__", os.environ["SETUP_TLS_MODE"]),

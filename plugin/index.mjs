@@ -42,6 +42,7 @@ const DEFAULTS = {
   token: '',
   slug: '',
   port: '6101',
+  localPort: 3080,
   frpcPath: '',
   restartBackoffSec: 5,
 };
@@ -84,7 +85,7 @@ function frpcToml(config, frpcPath) {
     `name = "${config.slug}"`,
     'type = "tcp"',
     'localIP = "127.0.0.1"',
-    'localPort = 3080',
+    `localPort = ${config.localPort || 3080}`,
     `remotePort = ${config.port}`,
     '',
   ].join('\n');
@@ -254,6 +255,11 @@ export function apply(ctx) {
             if (typeof body.port === 'string') {
               if (!PORT_RE.test(body.port)) throw new Error('port must be within the hub pool 6101-6199');
               next.port = body.port;
+            }
+            if (body.localPort !== undefined) {
+              const lp = Number(body.localPort);
+              if (!Number.isInteger(lp) || lp < 1 || lp > 65535) throw new Error('localPort must be an integer 1-65535');
+              next.localPort = lp;
             }
             if (typeof body.frpcPath === 'string' && body.frpcPath.trim()) next.frpcPath = body.frpcPath.trim();
             if (typeof body.restartBackoffSec === 'number' && body.restartBackoffSec >= 1) next.restartBackoffSec = body.restartBackoffSec;

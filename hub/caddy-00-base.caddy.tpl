@@ -29,6 +29,10 @@ __TLS_BLOCK__
 }
 
 # ── Unassigned subdomains: authenticated 404 (specific <slug> blocks win) ──
+# Only rendered in DNS-01 tls modes — wildcard certs CANNOT be issued via
+# HTTP-01, so http mode drops this block and unassigned subdomains simply
+# fail to connect (arguably safer). hub-setup strips this section in http mode.
+# __WILDCARD_BEGIN__
 *.__DOMAIN__:8443 {
 __TLS_BLOCK__
 
@@ -38,3 +42,4 @@ __TLS_BLOCK__
 
 	respond "no such fleet node" 404
 }
+# __WILDCARD_END__
