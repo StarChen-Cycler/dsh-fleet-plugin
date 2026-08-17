@@ -1,0 +1,8 @@
+# Shell scripts and server templates must stay LF on every checkout —
+# CRLF breaks bash on Linux and would make hub-setup.sh unrunnable.
+*.sh    text eol=lf
+*.caddy text eol=lf
+*.tpl   text eol=lf
+*.toml  text eol=lf
+*.yml   text eol=lf
+*.md    text eol=lf
