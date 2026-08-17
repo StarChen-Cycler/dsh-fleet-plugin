@@ -38,13 +38,11 @@ jobs:
             for f in $files; do node --check "$f"; done
           fi
 
-      # Unit tests: run when a tests/ directory exists.
+      # Unit tests: zero-dependency node:test runner — `npm install` is not
+      # required by design (this repo's runtime code uses node builtins only).
       - name: Unit tests
         shell: bash
         run: |
-          if [ -f package.json ]; then
-            npm install
-            if [ -d tests ]; then
-              npx vitest run --reporter=dot
-            fi
+          if [ -d tests ]; then
+            node --test
           fi

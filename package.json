@@ -1,0 +1,41 @@
+{
+  "name": "dsh-fleet-plugin",
+  "version": "0.1.0",
+  "description": "Fleet portal bundle for DeepSeek Harness: join any DSH instance to a hub for remote command from one web portal.",
+  "license": "MIT",
+  "main": "./plugin/index.mjs",
+  "exports": {
+    ".": "./plugin/index.mjs",
+    "./client": "./client.js",
+    "./package.json": "./package.json",
+    "./cordis.patch.yml": "./cordis.patch.yml"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
+    }
+  },
+  "files": [
+    "plugin",
+    "client.js",
+    "cordis.patch.yml",
+    "node",
+    "hub",
+    "portal",
+    "docs",
+    "MANIFEST.md",
+    "AGENTS.md",
+    "README.md",
+    "LICENSE"
+  ],
+  "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "@deepseek-ai/cordis": "^4.0.1"
+  }
+}

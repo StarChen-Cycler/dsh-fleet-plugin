@@ -1,0 +1,5 @@
+# dsh-fleet-plugin bundle patch: mount the plugin row into the composition.
+# Installed via:  dsh plugin --profile <name> add dsh-fleet-plugin
+- insert:
+    - id: dsh-fleet
+      name: dsh-fleet-plugin
