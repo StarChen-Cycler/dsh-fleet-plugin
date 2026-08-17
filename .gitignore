@@ -12,3 +12,5 @@ node/bin/frpc*
 # OS cruft
 .DS_Store
 Thumbs.db
+
+__pycache__/

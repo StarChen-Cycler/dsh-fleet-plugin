@@ -207,6 +207,13 @@ gate "05b: caddy built with both DNS plugins" bash -c \
 # ── 06_portal_password ─────────────────────────────────────────────────────
 log "06_portalpw  bcrypt hash for the deployment-level single password"
 mkdir -p "$CADDY_ETC" "$FRAG_DIR"
+# Re-runs must NEVER rotate the password: node fragments copy the bcrypt hash
+# from 00-base.caddy, and a rotated hash would lock already-enrolled nodes
+# out. --password overrides explicitly; otherwise reuse, else generate once.
+if [[ -z "$PORTAL_PW" && -s "${CADDY_ETC}/fleet.pw" ]]; then
+  PORTAL_PW="$(cat "${CADDY_ETC}/fleet.pw")"
+  log "       reusing existing portal password from ${CADDY_ETC}/fleet.pw"
+fi
 if [[ -z "$PORTAL_PW" ]]; then
   PORTAL_PW="$(openssl rand -base64 24 | tr -d '/+=' | head -c 24)"
   log "       no --password supplied: generated a random 24-char portal password"

@@ -10,10 +10,10 @@
 //   node node-bootstrap.mjs --install-service        (autostart the tunnel)
 //   node node-bootstrap.mjs --uninstall-service
 // The enroll output line can be passed whole:  node node-bootstrap.mjs <enroll-line>
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import {
-  chmodSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync,
+  chmodSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, statSync, writeFileSync,
 } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -164,24 +164,28 @@ function writeConfig(args) {
 // ── step 06: start + tunnel-up gate ───────────────────────────────────────
 function startFrpc(args) {
   stopFrpc();
-  const res = run(FRPC_BIN, ['-c', FRPC_CFG], { detached: process.platform !== 'win32' });
-  if (res.ok !== true && res.err) {
-    // frpc daemonizes into the background after printing startup lines.
-    if (!res.err.includes('start frpc service')) fail('06: frpc start', res.err.slice(-300));
-  }
+  // Redirect frpc stdout/stderr into FRPC_LOG so the tunnel-up gate can read
+  // the login line (stdio pipes never reach a detached Windows spawn).
+  const logFd = openSync(FRPC_LOG, 'w');
+  const child = spawn(FRPC_BIN, ['-c', FRPC_CFG], {
+    stdio: ['ignore', logFd, logFd],
+    detached: process.platform !== 'win32',
+  });
+  if (typeof child.unref === 'function') child.unref();
   let up = false;
-  for (let i = 0; i < 20; i += 1) {
-    if (existsSync(FRPC_LOG)) {
-      const tail = readFileSync(FRPC_LOG, 'utf8').slice(-4000);
-      if (tail.includes('login to server success')) { up = true; break; }
-      if (tail.includes('auth failed') || tail.includes('token in login doesn')) {
-        fail('06: tunnel login', 'the hub rejected this token — was it revoked?');
-      }
+  for (let i = 0; i < 40; i += 1) {
+    const tail = readFileSync(FRPC_LOG, 'utf8').slice(-4000);
+    if (tail.includes('login to server success')) { up = true; break; }
+    if (tail.includes('auth failed') || tail.includes("token in login doesn")) {
+      fail('06: tunnel login', 'the hub rejected this token — was it revoked?');
+    }
+    if (tail.includes('connection refused') || tail.includes('i/o timeout') || tail.includes('connect: ')) {
+      fail('06: tunnel login', 'cannot reach the hub — check the HUB host:port and TCP 7000');
     }
     spawnSync(process.execPath, ['-e', 'setTimeout(()=>{},250)'], { stdio: 'ignore' });
   }
   gate('06: frpc logged into the hub (tunnel up)', up,
-    `no "login to server success" in ${FRPC_LOG} within 5s`);
+    `no "login to server success" in ${FRPC_LOG} within 10s`);
   log(`PASS  node online: https://${args.slug}.<hub-domain>:8443`);
 }
 
