@@ -18,6 +18,9 @@
       "platform": "web"
     }
   },
+  "bin": {
+    "dsh-fleet": "./node/dsh-fleet-web.mjs"
+  },
   "files": [
     "plugin",
     "client.js",
