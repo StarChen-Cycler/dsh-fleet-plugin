@@ -138,6 +138,18 @@ ${TLS_BLOCK}
 			respond 401
 		}
 
+		# Portal probe exemption: the hub page polls /dsh-status cross-origin
+		# WITHOUT credentials (portal/app.js), so basic_auth must not gate it —
+		# otherwise every card shows 离线：节点探测失败 while the node is fine.
+		# Read-only host stats; the DSH /api fence never applied here anyway.
+		handle /dsh-status* {
+			reverse_proxy 127.0.0.1:${PORT} {
+				header_up Host 127.0.0.1:3080
+				header_up -Origin
+				header_up -Sec-Fetch-Site
+			}
+		}
+
 		handle {
 			basic_auth {
 				fleet ${PW_HASH}

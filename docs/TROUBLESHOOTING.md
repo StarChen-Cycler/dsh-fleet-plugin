@@ -106,6 +106,33 @@ curl --http1.1 ... https://<slug>.<域名>:8443/api/events.mux  # ③ 经 Caddy 
 这不是配置错误；缓解：历史按需分页加载（DSH 自身行为），或需要整段历史时在本机打开。
 隧道带宽由 VPS 决定（轻量 4Mbps 已够流式文本，大文件传输另计）。
 
+## 门户卡片全部「离线：节点探测失败」，但节点直连正常
+
+**现象**（2026-08 手机端实测）：门户列出所有节点，但每张卡片都灰、显示探测失败；
+而直接打开节点 URL 一切正常。
+
+**根因**：门户探针是**跨域、不带凭据**的 fetch（portal/app.js 设计如此，
+`/dsh-status` 因此带 CORS `*`）；而节点片段的 basic_auth 兜底 handle 把探针也挡了
+（401）。即「节点活着，但探针进不来」。
+
+**修复**：节点片段在 basic_auth 之前加探针豁免（enroll.sh 模板已含，旧片段手动补）：
+
+```caddy
+handle /dsh-status* {
+	reverse_proxy 127.0.0.1:${PORT} {
+		header_up Host 127.0.0.1:3080
+		header_up -Origin
+		header_up -Sec-Fetch-Site
+	}
+}
+```
+
+注意顺序：WS 401 门闸 → 探针豁免 → basic_auth 兜底。豁免只暴露只读主机指标
+（OS/CPU/内存/磁盘/uptime），这是探针的设计意图。
+
+**验证**：`curl -H 'Accept: application/json' https://<slug>.<domain>:8443/dsh-status`
+无凭据应返回 200 + JSON；根路径无凭据仍应 401。
+
 ## 密码轮换（门户）
 
 ```bash
