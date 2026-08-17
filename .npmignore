@@ -1,0 +1,2 @@
+# Deployment-specific operational logs never ship in the npm package.
+docs/acceptance-record.md

@@ -19,7 +19,7 @@
     }
   },
   "bin": {
-    "dsh-fleet": "./node/dsh-fleet-web.mjs"
+    "dsh-fleet": "node/dsh-fleet-web.mjs"
   },
   "files": [
     "plugin",
