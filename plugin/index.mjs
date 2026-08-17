@@ -296,10 +296,21 @@ export function apply(ctx) {
     return { ...config, token: redact(config.token) };
   }
 
-  const webServer = ctx.get('webServer', false);
-  if (webServer !== undefined && typeof webServer.register === 'function') {
-    registerWebRoutes(webServer);
-  }
+  // Order-robustness: when the webserver is not yet PROVIDED at apply time
+  // (a profile lists this bundle before dsh-web-app), the optional-inject
+  // form registers the routes the moment it appears, and tears nothing down
+  // when it never does (headless). Same pattern as dsh-settings. Registered
+  // per service INSTANCE, so a reloaded webserver re-registers cleanly.
+  let registeredFor = null;
+  const registerFor = (ws) => {
+    if (ws === undefined || ws === registeredFor || typeof ws.register !== 'function') return;
+    registeredFor = ws;
+    registerWebRoutes(ws);
+  };
+  registerFor(ctx.get('webServer', false));
+  ctx.inject(['webServer'], (wsCtx) => {
+    registerFor(wsCtx.get('webServer'));
+  });
 
   startSupervisor();
 

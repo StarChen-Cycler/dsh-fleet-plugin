@@ -12,11 +12,13 @@ import { apply } from '../plugin/index.mjs';
 function makeCtx() {
   const routes = [];
   const cleanups = [];
+  const injectCbs = [];
   const webServer = {
     register: (route) => { routes.push(route); return () => {}; },
   };
   const ctx = {
     get: (n, _strict) => (n === 'webServer' ? webServer : undefined),
+    inject: (_deps, cb) => { injectCbs.push(cb); return () => {}; },
     effect: (cb) => {
       const cleanup = cb();
       if (typeof cleanup === 'function') cleanups.push(cleanup);
@@ -124,7 +126,37 @@ test('supervisor stays inert when disabled and reports a missing binary when ena
   }
 });
 
-// Real-binary test (skipped on CI machines without frpc): a frpc pointed at a
+test('routes register when the webserver is provided AFTER apply (late-provider ordering)', () => {
+  const home = join(tmpdir(), `dsh-fleet-test-${Date.now()}`);
+  mkdirSync(home, { recursive: true });
+  writeFileSync(join(home, 'dsh-fleet.json'), JSON.stringify({ enabled: false }));
+  const prev = process.env.DSH_HOME;
+  process.env.DSH_HOME = home;
+  try {
+    let ws = undefined;
+    const routes = [];
+    const injectCbs = [];
+    const ctx = {
+      get: (n, _strict) => (n === 'webServer' ? ws : undefined),
+      inject: (_deps, cb) => { injectCbs.push(cb); return () => {}; },
+      effect: (cb) => { cb(); return () => {}; },
+    };
+    apply(ctx);
+    assert.equal(routes.length, 0, 'no routes before the webserver exists');
+
+    ws = { register: (route) => { routes.push(route); return () => {}; } };
+    const wsCtx = { get: (n) => (n === 'webServer' ? ws : undefined) };
+    injectCbs.forEach((cb) => cb(wsCtx));
+    assert.equal(routes.length, 3, 'routes registered once the provider appears');
+    const first = routes.length;
+
+    injectCbs.forEach((cb) => cb(wsCtx)); // re-fire on the SAME instance → no duplicates
+    assert.equal(routes.length, first, 'same instance never double-registers');
+  } finally {
+    if (prev === undefined) delete process.env.DSH_HOME; else process.env.DSH_HOME = prev;
+    rmSync(home, { recursive: true, force: true });
+  }
+});
 // dead hub exits on its own — the supervisor must restart it with backoff, and
 // the plugin dispose must kill it for good.
 const REAL_FRPC = join(homedir(), '.dsh-fleet', 'frpc-0.71.0', process.platform === 'win32' ? 'frpc.exe' : 'frpc');
