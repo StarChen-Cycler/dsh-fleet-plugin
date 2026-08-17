@@ -4,6 +4,7 @@
 # Node
 node_modules/
 *.log
+*.tgz
 
 # frp binaries cached by bootstrap (downloaded at runtime)
 ~/.dsh-fleet/

@@ -27,12 +27,7 @@
     "cordis.patch.yml",
     "node",
     "hub",
-    "portal",
-    "docs",
-    "MANIFEST.md",
-    "AGENTS.md",
-    "README.md",
-    "LICENSE"
+    "portal"
   ],
   "type": "module",
   "engines": {

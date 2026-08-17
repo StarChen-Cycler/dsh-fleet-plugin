@@ -1,2 +1,9 @@
-# Deployment-specific operational logs never ship in the npm package.
-docs/acceptance-record.md
+# Documentation never ships in the npm package (README.md, LICENSE and
+# package.json are force-included by npm and cannot be excluded).
+*.md
+docs/
+
+# Operational artifacts
+.octie/
+__pycache__/
+*.tgz
