@@ -110,6 +110,13 @@ ${TLS_BLOCK}
 	# WS auth via an origin cookie: browsers attach same-origin cookies to WS
 	# handshakes but never HTTP auth (WHATWG fetch #565). Any successful
 	# basic-auth REST call sets the cookie; upgrades without it get 401.
+	#
+	# Host rewrite: the DSH /api fence pins privileged methods (settings.*,
+	# credentials.*, agentPreset.*) to loopback Host headers. basic_auth is
+	# the real authentication boundary here, so the proxy presents every
+	# request as loopback (port is cosmetic) and strips Origin/Sec-Fetch-Site
+	# markers that would mismatch the rewritten Host — the same semantics
+	# ngrok's host rewrite provided.
 	route {
 		@wsauth {
 			header Connection *Upgrade*
@@ -117,7 +124,11 @@ ${TLS_BLOCK}
 			header Cookie *dshfleet_ws={env.WS_COOKIE_SECRET}*
 		}
 		handle @wsauth {
-			reverse_proxy 127.0.0.1:${PORT}
+			reverse_proxy 127.0.0.1:${PORT} {
+				header_up Host 127.0.0.1:3080
+				header_up -Origin
+				header_up -Sec-Fetch-Site
+			}
 		}
 		@ws {
 			header Connection *Upgrade*
@@ -132,7 +143,11 @@ ${TLS_BLOCK}
 				fleet ${PW_HASH}
 			}
 			header Set-Cookie "dshfleet_ws={env.WS_COOKIE_SECRET}; Path=/; Secure; HttpOnly; SameSite=Lax"
-			reverse_proxy 127.0.0.1:${PORT}
+			reverse_proxy 127.0.0.1:${PORT} {
+				header_up Host 127.0.0.1:3080
+				header_up -Origin
+				header_up -Sec-Fetch-Site
+			}
 		}
 	}
 }
