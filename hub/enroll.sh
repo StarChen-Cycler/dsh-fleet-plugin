@@ -107,11 +107,26 @@ cat > "${FRAG_DIR}/10-${SLUG}.caddy" <<EOF
 ${SLUG}.${DOMAIN}:8443 {
 ${TLS_BLOCK}
 
-	basic_auth {
-		fleet ${PW_HASH}
+	# WebSocket upgrades MUST bypass basic_auth: browsers do not attach HTTP
+	# auth credentials to WS handshakes (WHATWG fetch #565), so auth on the
+	# upgrade path breaks every browser client. DSH's own /api trust fence
+	# still gates the stream; residual risk documented in SECURITY.md.
+	@ws {
+		header Connection *Upgrade*
+		header Upgrade websocket
+	}
+	handle @ws {
+		reverse_proxy 127.0.0.1:${PORT}
 	}
 
-	reverse_proxy 127.0.0.1:${PORT}
+	# Everything else (REST/static) stays behind the portal password.
+	handle {
+		basic_auth {
+			fleet ${PW_HASH}
+		}
+
+		reverse_proxy 127.0.0.1:${PORT}
+	}
 }
 EOF
 gate "05b: node Caddy fragment written and validates" bash -c \

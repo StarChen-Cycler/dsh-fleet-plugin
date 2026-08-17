@@ -36,3 +36,15 @@ hubUrl/slug，自动推导该 authority 并加上它；无配置时退化为普�
   `agentPreset.*` 硬锁回环，远程拿不到你的 API key、改不了设置、弹不了系统对话框。
 - 不要对不可信网络声明 `--trusted-host 0.0.0.0` 之类的宽泛条目；只声明你的节点
   authority（精确 `host:port`）。
+
+## WebSocket 豁免（浏览器的 WS 不带 HTTP 认证）
+
+浏览器（Chrome/QuarkPC 等）的 WebSocket 握手**不携带** basic-auth 凭据
+（[WHATWG fetch #565](https://github.com/whatwg/fetch/issues/565)），因此节点片段
+对升级请求（`Connection: Upgrade` + `Upgrade: websocket`）豁免 basic_auth——
+否则所有浏览器的 WS 长连接都会被 401 拒掉。
+
+残余风险：**不带门户密码的人**可打开节点的 DSH 事件流（`/api/events.mux` 等只读
+流）。影响面：只读事件（会话活动通知）；REST（写操作）与特权面仍分别由 basic_auth
+与 DSH 栅栏保护。若你的子域会公开到不可信环境，建议额外加 IP 白名单（Caddy
+`remote_ip` matcher）或短期关站。
