@@ -19,10 +19,13 @@
   01a-05 全 PASS（镜像兜底下载、解压展平修复、配置生成）。
 - 阻塞：腾讯云安全组未放行 TCP 7000（frpc i/o timeout，日志留证）——用户开通后复测。
 
-## 3. 手机点击实例 → 进入 DSH → agent 回复 ⬜
+## 3. 手机点击实例 → 进入 DSH → agent 回复 🔶
 
-- 依赖：TCP 7000/8443 + DNS 记录 + 证书签发 + 节点 DSH 以 `dsh-fleet web`
-  （--trusted-host）启动。均待外部条件。
+- 证据（公开路径实测）：`POST https://test-node.pengyuefuture.cn:8443/api/<未知方法>` 带门户凭据
+  → **404（非 403）**——`--trusted-host` 包装启动后，经门户的 /api 请求通过 DSH 信任栅栏
+  （特权方法仍锁回环）；`GET /dsh-status` 经门户域名返回真实指标 JSON（Windows-PC/16 核/内存磁盘实值）。
+- 剩余：真实浏览器里点卡片→进 DSH→发消息（用户手机验证）；主会话（3080）装插件后即为
+  正式节点（当前测试节点为 3099 隔离实例）。
 
 ## 4. revoke 后立即离线、其余不受影响 ✅
 
@@ -34,10 +37,11 @@
 
 - 自启注册（WinSW/launchd/systemd）代码就绪；需在真实节点设备实测重启恢复。
 
-## 6. 错误密码 401；/dsh-status 与门户无凭据泄露 🔶
+## 6. 错误密码 401；/dsh-status 与门户无凭据泄露 ✅
 
+- HTTPS 公开实测：无凭据 → **401**；带门户密码 → **200**（门户页、nodes.json、节点 dsh-status 均同）。
 - /dsh-status 无凭据 + CORS：node:test 断言通过（序列化输出不含 token）。
-- HTTPS 401/200 实测：待证书签发（TCP 80 已开 ✓，DNS 记录未加 ✗）。
+- 开关联动实测：POST config enabled:false → 枢纽代理 offline；true → 恢复 online。
 
 ## 7. 3-OS CI 全绿；npm + GitHub 双通道 ✅/⬜
 
