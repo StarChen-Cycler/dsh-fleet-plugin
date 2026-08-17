@@ -305,7 +305,10 @@ gate "07b: caddy service active" systemctl is-active caddy
 # ── 08_portal_placeholder ──────────────────────────────────────────────────
 log "08_portal  placeholder page (the real portal lands with the portal task)"
 mkdir -p "$PORTAL_DIR"
-if [[ ! -f "${PORTAL_DIR}/index.html" || $FORCE -eq 1 ]]; then
+# Write the placeholder ONLY when the directory has no portal yet: the real
+# portal page is delivered content (repo portal/), and --force re-runs must
+# never clobber it — same ownership principle as the portal password.
+if [[ ! -f "${PORTAL_DIR}/index.html" ]]; then
   cat > "${PORTAL_DIR}/index.html" <<'EOF'
 <!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
