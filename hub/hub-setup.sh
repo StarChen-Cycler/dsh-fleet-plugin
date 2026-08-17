@@ -95,11 +95,12 @@ case "$DNS_PROVIDER" in
   *) fail "00b: dns provider" "--dns must be tencentcloud, alidns, or http (got '${DNS_PROVIDER}')" ;;
 esac
 log "PASS  00b: dns provider=${DNS_PROVIDER} (env ${DNS_ENV_ID:-<none>}/${DNS_ENV_KEY:-<none>})"
-# TLS block: DNS-01 providers use their plugin; `http` uses Caddy's default
-# HTTP-01 challenge (needs TCP 80 open — the natural choice for non-mainland
-# hubs like Hong Kong, and it needs NO DNS API credentials).
+# TLS block: DNS-01 providers use their plugin; `http` omits the tls directive
+# entirely — Caddy auto-issues via HTTP-01 on :80 / TLS-ALPN on :443 (needs
+# TCP 80 open; the natural choice for non-mainland hubs like Hong Kong, and it
+# needs NO DNS API credentials).
 if [[ "$DNS_PROVIDER" == "http" ]]; then
-  TLS_BLOCK=$'\ttls'
+  TLS_BLOCK=$'\t# tls mode http — automatic issuance (keep TCP 80 open)'
 else
   TLS_BLOCK=$'\ttls {\n\t\tdns '${DNS_PROVIDER}$' {env.'${DNS_ENV_ID}$'} {env.'${DNS_ENV_KEY}$'}\n\t}'
 fi
@@ -116,7 +117,7 @@ gate "01: curl/tar/openssl installed" bash -c \
 
 # ── 02_frps_binary ─────────────────────────────────────────────────────────
 log "02_frps  pre-flight: download+extract ≈ 10-30 s (one-off)"
-if [[ ! -x "$FRPS_BIN" || $FORCE -eq 1 ]]; then
+if [[ ! -x "$FRPS_BIN" ]]; then
   mkdir -p "$FRP_DIR"
   tmp="$(mktemp -d)"
   gate "02a: frps tarball downloaded (${FRP_URL})" bash -c \
@@ -125,6 +126,8 @@ if [[ ! -x "$FRPS_BIN" || $FORCE -eq 1 ]]; then
   cp "${tmp}"/frp_*/frps "$FRPS_BIN"
   rm -rf "$tmp"
 fi
+# --force deliberately never re-copies over a RUNNING binary (Linux refuses
+# with "Text file busy"); the version gate below still catches mismatches.
 gate "02b: frps version == ${FRP_VERSION}" bash -c \
   "\"$FRPS_BIN\" --version 2>&1 | grep -q '${FRP_VERSION#v}'"
 
@@ -136,8 +139,15 @@ if [[ ! -f "${FRP_ETC}/frps.toml" || $FORCE -eq 1 ]]; then
   sed "s/__DASHBOARD_PASSWORD__/${DASH_PW}/" \
     "$(dirname "$0")/frps.toml.tpl" > "${FRP_ETC}/frps.toml"
   chmod 600 "${FRP_ETC}/frps.toml"
-  : > "$TOKENS_FILE"
+fi
+# Shared fleet token (architecture decision 2026-08-17: frp v0.71 tokenSource
+# supports ONE token per file, read once at startup — per-node tokens upgrade
+# later via per-node frps instances). Generated once; --force never rotates it
+# because every enrolled node holds it.
+if [[ ! -s "$TOKENS_FILE" ]]; then
+  openssl rand -hex 16 > "$TOKENS_FILE"
   chmod 600 "$TOKENS_FILE"
+  log "       generated shared fleet token — SAVE IT (nodes join with it): $(cat "$TOKENS_FILE")"
 fi
 gate "03a: tokenSource configured" bash -c \
   "grep -q 'auth.tokenSource' '${FRP_ETC}/frps.toml'"
@@ -170,7 +180,8 @@ fi
 systemctl enable frps >/dev/null 2>&1 || true
 systemctl restart frps
 gate "04a: frps service active" systemctl is-active frps
-gate "04b: frps listening on 7000" bash -c "ss -lntp | grep -q ':7000 '"
+gate "04b: frps listening on 7000 (waits up to 10s for the bind)" bash -c \
+  "for i in \$(seq 1 20); do ss -lntp | grep -q ':7000 ' && exit 0; sleep 0.5; done; exit 1"
 
 # ── 05_caddy_binary (build once with both DNS plugins) ─────────────────────
 log "05_caddy  pre-flight: Go+xcaddy build ≈ 2-5 min (one-off; network to Go proxy)"
@@ -233,7 +244,7 @@ fi
 PW_HASH_ESC="${PW_HASH//\$/\\$}"
 TPL="$(dirname "$0")/caddy-00-base.caddy.tpl"
 export SETUP_DOMAIN="$DOMAIN" SETUP_TLS_MODE="$DNS_PROVIDER" SETUP_DNS_ENV_ID="$DNS_ENV_ID" \
-       SETUP_DNS_ENV_KEY="$DNS_ENV_KEY" SETUP_PW_HASH="$PW_HASH_ESC" SETUP_TLS_BLOCK="$TLS_BLOCK"
+       SETUP_DNS_ENV_KEY="$DNS_ENV_KEY" SETUP_PW_HASH="$PW_HASH" SETUP_TLS_BLOCK="$TLS_BLOCK"
 python3 - "$TPL" "${FRAG_DIR}/00-base.caddy" <<'PYEOF'
 import os, sys
 tpl, out = sys.argv[1], sys.argv[2]

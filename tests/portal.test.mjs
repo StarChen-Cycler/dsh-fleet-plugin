@@ -40,15 +40,15 @@ function makeDoc(grid, hint, refreshLine, hubLine) {
   };
 }
 
-function boot({ proxies, nodeStatus }) {
+function boot({ nodes, nodeStatus }) {
   const grid = makeEl('main');
   const hint = makeEl('p');
   const refreshLine = makeEl('span');
   const hubLine = makeEl('span');
   let intervalCb = null;
   const fetch = async (url) => {
-    if (url === '/fleet/api/proxy/tcp') {
-      return { ok: true, json: async () => ({ proxies: proxies() }) };
+    if (url === '/nodes.json') {
+      return { ok: true, json: async () => nodes() };
     }
     if (url.includes('/dsh-status')) {
       const body = nodeStatus();
@@ -75,7 +75,7 @@ function allText(el) {
 
 test('portal renders online nodes as clickable cards', async () => {
   const { grid } = boot({
-    proxies: () => [{ name: 'home-pc', type: 'tcp', status: 'online' }],
+    nodes: () => [{ slug: 'home-pc', port: 6101 }],
     nodeStatus: () => ({ ok: true, node: { name: 'Home PC', slug: 'home-pc' }, system: { os: 'win32/x64', hostname: 'DESKTOP', cpus: 8, cpuLoadPct: 12.3, memTotal: 1000, memFree: 500, diskTotal: 1000, diskFree: 250 } }),
   });
   await new Promise((r) => setTimeout(r, 10)); // initial refresh microtasks
@@ -90,16 +90,16 @@ test('portal renders online nodes as clickable cards', async () => {
   assert.ok(texts.includes('DESKTOP'), 'system hostname rendered');
 });
 
-test('portal grays a node on the next poll after it goes offline (10s poll ≪ 60s bound)', async () => {
-  let status = 'online';
+test('portal grays a node on the next poll after its probe fails (10s poll ≪ 60s bound)', async () => {
+  let up = true;
   const { grid, poll } = boot({
-    proxies: () => [{ name: 'home-pc', type: 'tcp', status }],
-    nodeStatus: () => null,
+    nodes: () => [{ slug: 'home-pc', port: 6101 }],
+    nodeStatus: () => (up ? { ok: true, node: { name: 'Home PC' }, system: { os: 'x', hostname: 'h', cpus: 1, cpuLoadPct: 0, memTotal: 1, memFree: 0, diskTotal: 1, diskFree: 0 } } : null),
   });
   await new Promise((r) => setTimeout(r, 10));
   assert.ok(!grid.children[0].className.includes('offline'));
 
-  status = 'error'; // frps reports the proxy gone/down
+  up = false; // node probe starts failing
   await poll();
   assert.ok(grid.children[0].className.includes('offline'), 'node turns gray within one poll cycle');
 });
