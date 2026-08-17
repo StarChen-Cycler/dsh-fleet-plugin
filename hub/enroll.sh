@@ -89,17 +89,19 @@ fi
 
 # ── 06_caddy_node_fragment ─────────────────────────────────────────────────
 PW_HASH="$(grep -oP '^\s*fleet \K[^\s]+' "${FRAG_DIR}/00-base.caddy" | head -n1)"
-DNS_PROVIDER="$(grep -oP 'dns \K[a-z]+' "${FRAG_DIR}/00-base.caddy" | head -n1)"
-case "$DNS_PROVIDER" in
-  tencentcloud) DNS_ENV_ID="TENCENT_SECRET_ID"; DNS_ENV_KEY="TENCENT_SECRET_KEY" ;;
-  alidns)       DNS_ENV_ID="ALIYUN_ACCESS_KEY_ID"; DNS_ENV_KEY="ALIYUN_ACCESS_KEY_SECRET" ;;
-  *) fail "06a: dns provider" "cannot read provider from 00-base.caddy" ;;
-esac
+TLS_MODE="$(grep -oP 'fleet-tls-mode: \K\w+' "${FRAG_DIR}/00-base.caddy" | head -n1)"
+DNS_ENV_ID="$(grep -oP 'fleet-tls-env-id: \K\w*' "${FRAG_DIR}/00-base.caddy" | head -n1)"
+DNS_ENV_KEY="$(grep -oP 'fleet-tls-env-key: \K\w*' "${FRAG_DIR}/00-base.caddy" | head -n1)"
+if [[ "$TLS_MODE" == "http" ]]; then
+  TLS_BLOCK=$'\ttls'
+elif [[ "$TLS_MODE" == "tencentcloud" || "$TLS_MODE" == "alidns" ]]; then
+  TLS_BLOCK=$'\ttls {\n\t\tdns '${TLS_MODE}$' {env.'${DNS_ENV_ID}$'} {env.'${DNS_ENV_KEY}$'}\n\t}'
+else
+  fail "06a: tls mode" "cannot read fleet-tls-mode from 00-base.caddy (got '${TLS_MODE}')"
+fi
 cat > "${FRAG_DIR}/10-${SLUG}.caddy" <<EOF
 ${SLUG}.${DOMAIN}:8443 {
-	tls {
-		dns ${DNS_PROVIDER} {env.${DNS_ENV_ID}} {env.${DNS_ENV_KEY}}
-	}
+${TLS_BLOCK}
 
 	basic_auth {
 		fleet ${PW_HASH}

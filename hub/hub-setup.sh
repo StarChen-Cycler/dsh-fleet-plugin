@@ -15,8 +15,10 @@
 #     the final STATUS file is PASS or FAIL, nothing in between.
 #
 # Usage:
-#   sudo ./hub-setup.sh --domain hub.example.com --dns tencentcloud|alidns \
+#   sudo ./hub-setup.sh --domain hub.example.com --dns tencentcloud|alidns|http \
 #       [--email admin@example.com] [--password '<portal password>'] [--force]
+#   --dns http = Caddy HTTP-01 challenge (open TCP 80; best for non-mainland
+#   hubs; no DNS API credentials needed). Default Debian 12 or Ubuntu 22.04+.
 # Env overrides: FLEET_DOMAIN FLEET_DNS_PROVIDER FLEET_EMAIL FLEET_PASSWORD
 set -euo pipefail
 
@@ -89,10 +91,20 @@ gate "00a: domain supplied and well-formed" bash -c \
 case "$DNS_PROVIDER" in
   tencentcloud) DNS_ENV_ID="TENCENT_SECRET_ID"; DNS_ENV_KEY="TENCENT_SECRET_KEY" ;;
   alidns)       DNS_ENV_ID="ALIYUN_ACCESS_KEY_ID"; DNS_ENV_KEY="ALIYUN_ACCESS_KEY_SECRET" ;;
-  *) fail "00b: dns provider" "--dns must be tencentcloud or alidns (got '${DNS_PROVIDER}')" ;;
+  http)         DNS_ENV_ID=""; DNS_ENV_KEY="" ;;
+  *) fail "00b: dns provider" "--dns must be tencentcloud, alidns, or http (got '${DNS_PROVIDER}')" ;;
 esac
-log "PASS  00b: dns provider=${DNS_PROVIDER} (env ${DNS_ENV_ID}/${DNS_ENV_KEY})"
-gate "00c: running Debian" bash -c "grep -q 'ID=debian' /etc/os-release"
+log "PASS  00b: dns provider=${DNS_PROVIDER} (env ${DNS_ENV_ID:-<none>}/${DNS_ENV_KEY:-<none>})"
+# TLS block: DNS-01 providers use their plugin; `http` uses Caddy's default
+# HTTP-01 challenge (needs TCP 80 open — the natural choice for non-mainland
+# hubs like Hong Kong, and it needs NO DNS API credentials).
+if [[ "$DNS_PROVIDER" == "http" ]]; then
+  TLS_BLOCK=$'\ttls'
+else
+  TLS_BLOCK=$'\ttls {\n\t\tdns '${DNS_PROVIDER}$' {env.'${DNS_ENV_ID}$'} {env.'${DNS_ENV_KEY}$'}\n\t}'
+fi
+gate "00c: running Debian 12 or Ubuntu 22.04+" bash -c \
+  "grep -qE '^ID=(debian|ubuntu)$' /etc/os-release"
 
 # ── 01_deps ────────────────────────────────────────────────────────────────
 log "01_deps  pre-flight: apt install ≈ 30-60 s"
@@ -108,7 +120,7 @@ if [[ ! -x "$FRPS_BIN" || $FORCE -eq 1 ]]; then
   mkdir -p "$FRP_DIR"
   tmp="$(mktemp -d)"
   gate "02a: frps tarball downloaded (${FRP_URL})" bash -c \
-    "curl -fsSL '${FRP_URL}' -o '${tmp}/frp.tar.gz'"
+    "curl -fsSL '${FRP_URL}' -o '${tmp}/frp.tar.gz' || curl -fsSL 'https://ghfast.top/${FRP_URL}' -o '${tmp}/frp.tar.gz'"
   tar -xzf "${tmp}/frp.tar.gz" -C "$tmp"
   cp "${tmp}"/frp_*/frps "$FRPS_BIN"
   rm -rf "$tmp"
@@ -202,23 +214,41 @@ FRPS_PW="$(grep -oP 'webServer.password = "\K[^"]+' "${FRP_ETC}/frps.toml")"
 FRPS_AUTH_B64="$(printf '%s:%s' "$FRPS_USER" "$FRPS_PW" | base64 -w0)"
 
 if [[ ! -f "$FLEET_ENV" || $FORCE -eq 1 ]]; then
-  cat > "$FLEET_ENV" <<EOF
-# dsh-fleet secrets (root-only). Fill in the DNS provider credentials, then
-# `systemctl reload caddy` — cert issuance retries automatically.
-${DNS_ENV_ID}=
-${DNS_ENV_KEY}=
-FRPS_DASHBOARD_AUTH=${FRPS_AUTH_B64}
-EOF
+  {
+    echo "# dsh-fleet secrets (root-only)."
+    if [[ "$DNS_PROVIDER" != "http" ]]; then
+      echo "# Fill in the DNS provider credentials, then \`systemctl reload caddy\` —"
+      echo "# cert issuance retries automatically."
+      echo "${DNS_ENV_ID}="
+      echo "${DNS_ENV_KEY}="
+    else
+      echo "# tls-mode http: no DNS credentials needed; keep TCP 80 open in the"
+      echo "# security group for HTTP-01 challenges."
+    fi
+    echo "FRPS_DASHBOARD_AUTH=${FRPS_AUTH_B64}"
+  } > "$FLEET_ENV"
   chmod 600 "$FLEET_ENV"
 fi
 
 PW_HASH_ESC="${PW_HASH//\$/\\$}"
-sed -e "s/__DOMAIN__/${DOMAIN}/g" \
-    -e "s/__DNS_PROVIDER__/${DNS_PROVIDER}/g" \
-    -e "s/__DNS_ENV_ID__/${DNS_ENV_ID}/g" \
-    -e "s/__DNS_ENV_KEY__/${DNS_ENV_KEY}/g" \
-    -e "s#__PORTAL_PW_HASH__#${PW_HASH_ESC}#g" \
-    "$(dirname "$0")/caddy-00-base.caddy.tpl" > "${FRAG_DIR}/00-base.caddy"
+TPL="$(dirname "$0")/caddy-00-base.caddy.tpl"
+export SETUP_DOMAIN="$DOMAIN" SETUP_TLS_MODE="$DNS_PROVIDER" SETUP_DNS_ENV_ID="$DNS_ENV_ID" \
+       SETUP_DNS_ENV_KEY="$DNS_ENV_KEY" SETUP_PW_HASH="$PW_HASH_ESC" SETUP_TLS_BLOCK="$TLS_BLOCK"
+python3 - "$TPL" "${FRAG_DIR}/00-base.caddy" <<'PYEOF'
+import os, sys
+tpl, out = sys.argv[1], sys.argv[2]
+text = open(tpl).read()
+for key, value in (
+    ("__DOMAIN__", os.environ["SETUP_DOMAIN"]),
+    ("__TLS_MODE__", os.environ["SETUP_TLS_MODE"]),
+    ("__DNS_ENV_ID__", os.environ["SETUP_DNS_ENV_ID"]),
+    ("__DNS_ENV_KEY__", os.environ["SETUP_DNS_ENV_KEY"]),
+    ("__PORTAL_PW_HASH__", os.environ["SETUP_PW_HASH"]),
+    ("__TLS_BLOCK__", os.environ["SETUP_TLS_BLOCK"]),
+):
+    text = text.replace(key, value)
+open(out, "w").write(text)
+PYEOF
 
 cat > "${CADDY_ETC}/Caddyfile" <<EOF
 {
@@ -275,10 +305,11 @@ log "09_firewall"
 if command -v ufw >/dev/null 2>&1 && ufw status | grep -q 'Status: active'; then
   ufw allow 7000/tcp >/dev/null
   ufw allow 8443/tcp >/dev/null
-  gate "09: ufw allows 7000 and 8443" bash -c \
+  [[ "$DNS_PROVIDER" == "http" ]] && ufw allow 80/tcp >/dev/null
+  gate "09: ufw allows 7000, 8443 (+80 in http tls-mode)" bash -c \
     "ufw status | grep -q '7000/tcp.*ALLOW' && ufw status | grep -q '8443/tcp.*ALLOW'"
 else
-  log "PASS  09: no active ufw — skipping (ensure the cloud security group allows TCP 7000+8443)"
+  log "PASS  09: no active ufw — skipping (ensure the cloud security group allows TCP 7000+8443, plus 80 in http tls-mode)"
 fi
 
 # ── 10_final_gates ─────────────────────────────────────────────────────────
@@ -298,10 +329,15 @@ log "  curl -fsS -u fleet:'<portal pw>' -o /dev/null -w '%{http_code}' https://1
 log "── before the HTTPS cert can issue, create these DNS records ──"
 log "  hub.${DOMAIN}   A  ${VPS_IP}"
 log "  *.${DOMAIN}     A  ${VPS_IP}"
-log "── then fill the DNS provider credentials into ${FLEET_ENV} ──"
-log "  ${DNS_ENV_ID}=..."
-log "  ${DNS_ENV_KEY}=..."
-log "  systemctl reload caddy   # Caddy retries cert issuance automatically"
+if [[ "$DNS_PROVIDER" == "http" ]]; then
+  log "── tls-mode http: also open TCP 80 in the cloud security group (HTTP-01) ──"
+  log "  no DNS API credentials needed — Caddy issues certs automatically"
+else
+  log "── then fill the DNS provider credentials into ${FLEET_ENV} ──"
+  log "  ${DNS_ENV_ID}=..."
+  log "  ${DNS_ENV_KEY}=..."
+  log "  systemctl reload caddy   # Caddy retries cert issuance automatically"
+fi
 log "── next steps ──"
 log "  hub enroll <slug>   (per-node token + subdomain; see AGENTS.md/task graph)"
 log "  portal page install (separate task) once the portal/ deliverables land"

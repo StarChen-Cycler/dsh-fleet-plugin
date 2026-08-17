@@ -4,10 +4,13 @@
 
 bindPort = 7000
 
-# Per-node credentials: one token per line in the tokenSource file.
-# hub enroll appends a line; hub revoke removes it and reloads frps.
+# Per-node credentials note (frp v0.71, source-verified):
+# auth.tokenSource is a ValueSource STRUCT and the WHOLE file content is ONE
+# token — multi-token files are NOT supported, and the file is read only at
+# startup (no dynamic reload). hub enroll/revoke therefore restarts frps.
 auth.method = "token"
-auth.tokenSource = "/etc/frp/tokens"
+auth.tokenSource.type = "file"
+auth.tokenSource.file.path = "/etc/frp/tokens"
 
 # Encrypt the control channel between every frpc and this frps.
 transport.tls.force = true
