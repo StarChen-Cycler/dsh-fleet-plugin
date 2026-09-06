@@ -157,3 +157,17 @@ handle /dsh-status* {
 
 **预防**：改了仓库 `hub/` 下的脚本，**同一个 commit 里必须包含枢纽同步动作**
 （scp + 抽查标记位，如 `grep -c header_up <hub>/enroll.sh` 应 ≥ 2）。
+
+## 经门户打开「设置 → 模型」报「settings are unavailable in this browser」
+
+**现象**：门户里会话、聊天、插件设置都正常，唯独模型页报「加载提供方目录失败：
+settings are unavailable in this browser」。
+
+**根因**：这不是门户坏了，也不是隧道问题——DSH 配置面是**双闸**：服务端栅栏
+（我们的 Host 改写已解决）之外还有客户端闸 `isLoopbackHostname(location.hostname)`；
+页面 URL 不是回环时 settings 镜像跑 memory 模式，模型页拒载。**代理层无法修复**
+（闸读的是浏览器地址栏）。详见 trusted-host.md「客户端回环闸」节。
+
+**解法**：`ssh -L 3081:127.0.0.1:3080 <节点>` 后开 `http://127.0.0.1:3081`
+（回环地址，双闸全开，模型/凭据随便改）；iPad/手机用 Termius 建同样的本地转发。
+门户入口与转发入口是同一个 DSH，改动互通。

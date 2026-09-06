@@ -103,3 +103,28 @@ reverse_proxy 127.0.0.1:${PORT} {
 可用。实测（a6000，经门户）：`host.listDirectory` 200 且返回 crumbs+entries；
 `pickDirectory` 明确报「composed picker serves browse」——native 已关闭、栅栏放行。
 两包在 auto 的依赖闭包里，无需新下载；补丁在用户 profile 层，升级 DSH 不冲掉。
+
+## 客户端回环闸：模型页等「settings 镜像」表面远程不可用的原因与绕行
+
+**症状**：经门户打开 设置 → 模型，报「加载提供方目录失败：settings are unavailable
+in this browser」；通用设置的「打开配置文件」也不可用。
+
+**根因（双闸设计）**：配置面除了服务端栅栏（已用 Host 改写解决），还有一道
+**客户端闸**——`dsh-client-connection` 的 `isLoopback = isLoopbackHostname(location.hostname)`。
+页面 URL 不是回环时，`SettingsDescribeMirror` 以 memory 模式运行（不读 Host），
+模型页/任何镜像驱动的表面直接不可用。**这道闸读的是浏览器地址栏，代理层无法影响**，
+所以「经门户管理模型/凭据」在官方设计里就是回环专属。
+
+**绕行通道（推荐，零改动）——SSH 本地转发，让远程看起来是本地**：
+
+```bash
+# 本机 3081 → 节点的 127.0.0.1:3080（本机 3080 常被自己的 DSH 占用，故用 3081）
+ssh -L 3081:127.0.0.1:3080 <节点 ssh 别名>
+# 浏览器打开 http://127.0.0.1:3081 —— location.hostname 是回环，双闸全开
+```
+
+iPad/手机也可走这条路：装一个支持端口转发的 SSH 客户端（如 Termius），
+建同样的本地转发，浏览器访问 127.0.0.1:<本地端口> 即可。
+
+**与设计共处的边界**：门户（公网域名入口）用于会话/agent/插件设置等日常操作；
+模型与凭据管理走 SSH 转发入口。两边用的是同一个 DSH，数据互通。
