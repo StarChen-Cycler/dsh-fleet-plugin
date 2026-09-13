@@ -222,3 +222,37 @@ settings are unavailable in this browser」。
 **解法**：`ssh -L 3081:127.0.0.1:3080 <节点>` 后开 `http://127.0.0.1:3081`
 （回环地址，双闸全开，模型/凭据随便改）；iPad/手机用 Termius 建同样的本地转发。
 门户入口与转发入口是同一个 DSH，改动互通。
+
+## 刷新/重装后「Fleet 远程接入」设置页消失
+
+**现象**（2026-09-14 实测）：已打开的旧标签页里 Fleet 设置页好好的；**新开或刷新**
+页面后它不见了，设置侧栏只剩 通用设置/模型/插件/Agent 预设/Octie/侧边卡片。
+
+**根因（两层，缺一即复发）**：
+
+1. **0.1.5 的并发引导**：web shell 并发创建所有 client entry，`dsh.client.inject`
+   不会变成 entry 依赖，所以 client 插件若在 apply 里一次性
+   `ctx.get('slots')` 并 `undefined → return`，会与 slots 提供者竞态并**静默放弃**
+   （不报错，函数却没了）。修法 = 插件级 `inject: ['slots']`（让 fiber 等服务到位）；
+   同类排查：client 半里凡「一次性读取 + undefined 就 return」的服务都要改成插件级 inject。
+2. **安装副本被重装覆盖**：profile 依赖若是 npm 版本（如 `^0.1.0`），而修复还没发布，
+   那么任何 `pnpm install` / 插件重装都会把 profile 里的副本还原成旧版 —— 于是**下一次
+   全新加载又丢**。已打开的页面因为内存里还是修好的那份，所以看起来「刚才还好好的」。
+
+**持久化（二选一）**：
+
+```jsonc
+// A. 开发机（本仓库即源）：profile package.json 直接指向工作树
+"dsh-fleet-plugin": "link:I:/ai-automation-projects/dsh-fleet-plugin"
+// 已装好的环境无需跑 pnpm install，把 node_modules 下那份换成 junction 即可：
+//   Move-Item node_modules/dsh-fleet-plugin node_modules/dsh-fleet-plugin.npm-backup
+//   New-Item -ItemType Junction -Path node_modules/dsh-fleet-plugin -Target <repo>
+```
+
+```bash
+# B. 对外分发：发布含修复的版本，之后任何重装都自带修复
+npm publish --access public   # 需 2FA
+```
+
+**验证**：**绕过缓存**全新加载页面（Ctrl+Shift+R）后，设置侧栏出现「Fleet 远程接入」；
+`node --test` 全绿。若仍缺失，按第 1 条检查 client.js 是否声明了 `inject: ['slots']`。
