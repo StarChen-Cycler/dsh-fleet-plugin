@@ -128,3 +128,25 @@ iPad/手机也可走这条路：装一个支持端口转发的 SSH 客户端（�
 
 **与设计共处的边界**：门户（公网域名入口）用于会话/agent/插件设置等日常操作；
 模型与凭据管理走 SSH 转发入口。两边用的是同一个 DSH，数据互通。
+
+## DSH 0.1.5+：`dsh web` 自带的浏览器认证（门户需注入会话 cookie）
+
+0.1.5 起 `dsh web` 在自己的 HTTP 面上新增**浏览器会话认证**：启动令牌换取一枚按
+authority 绑定、HMAC 签名的 cookie，首页与全部 `/api`（含 WS）都要求它，否则 401
+（静态资源与 `/dsh-status` 不受影响）。这与我们的 Host 改写是**两层独立机制**——
+改写解决栅栏（403），cookie 解决认证（401）。
+
+门户适配 = 在代理层注入该 cookie（浏览器侧无感、零用户操作）：
+
+```bash
+# 节点上铸造（用凭据库里持久化的签名密钥，不需 launch token）
+node hub/browser-session-cookie.mjs --credentials ~/.dsh/.credentials.yaml \
+     --authority 127.0.0.1:3080 --days 30 > /tmp/node-cookie.txt
+# 枢纽上注入并 reload（幂等）
+sudo python3 hub/inject-cookie.py <slug> /tmp/node-cookie.txt && sudo systemctl reload caddy
+```
+
+cookie 寿命受节点 `cookieMaxAgeDays`（默认 30 天）限制，过期重跑上述两步。
+实测（home-pc，2026-09-13）：注入前门户首页 401，注入后 200 且应用正常、
+`WS /api/remote.mux` 101，无凭据 401 / WS 无门户 cookie 401 / 探针 200 保持不变。
+细节见仓库 `docs/TROUBLESHOOTING.md` 与 harness 侧 `docs/dsh-0.1.5-web-auth.md`。

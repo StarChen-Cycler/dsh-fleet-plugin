@@ -1,5 +1,50 @@
 # TROUBLESHOOTING
 
+## 升级到 0.1.5+ 后：门户页面 401、设置/会话内容空白
+
+**现象**（2026-09-13 实测于 home-pc，升到 0.1.5-rc.2 后）：浏览器打开门户地址只见
+「dsh web authentication required; reopen the URL printed by dsh web.」，或页面壳能
+渲染但设置里什么都读不出来（所有 `/api` 调用 401）。
+
+**根因**：0.1.5 给 `dsh web` 增加了**自己的浏览器认证**（与我们的 Host 改写/门闸是
+两层独立机制）：
+
+- 启动时生成一次性 launch token，打印在 `dsh web: http://…/?token=…`；
+- 用该 URL 访问一次会换取一个**按 authority 绑定、HMAC 签名的 cookie**
+  （`dsh-auth-<hash(Host)>`，密钥持久化在凭据库 `client-connection/browser-session`）；
+- 之后**首页 `/` 与全部 `/api`（含 WS 升级 `/api/remote.mux`）都要求该 cookie**，
+  否则 401。静态资源、`/dsh-status` 探针、插件自有路由（`/api/dsh-fleet/*`）不受影响
+  ——所以表现是「页面在、数据空」。
+
+**为什么门户会中招**：门户把 Host 改写成 `127.0.0.1:3080`，DSH 看到的 authority 就是
+它；但浏览器手里从来没有那枚 cookie。
+
+**修法（零用户操作）**：用节点凭据库里持久化的签名密钥**铸造**一枚 authority 为
+`127.0.0.1:3080` 的 cookie，在门户片段的每个 `reverse_proxy` 里注入：
+
+```bash
+# 1) 在节点上铸造（脚本在仓库 hub/ 下）
+node hub/browser-session-cookie.mjs \
+  --credentials ~/.dsh/.credentials.yaml \
+  --authority 127.0.0.1:3080 --days 30 > /tmp/node-cookie.txt
+
+# 2) 在枢纽上注入（幂等；WS / 探针 / REST 三个 proxy 块一起加）
+sudo python3 inject-cookie.py <slug> /tmp/node-cookie.txt
+sudo systemctl reload caddy
+```
+
+注入后的验证（缺一不可）：门户 `GET /` 200 且含 `__DSH_BOOT__`；`/api` 带凭据不再
+401（端点改名后的 404 属正常）；`WS /api/remote.mux` 带门户 cookie 101；无凭据 401、
+WS 无门户 cookie 401、探针 200 保持不变。
+
+**续期**：铸造的 cookie 寿命受节点配置 `cookieMaxAgeDays`（默认 30 天）限制；
+过期后重跑上面两步。想让节点发一年期 cookie，可在 profile 补丁里覆盖 connection 行
+（`cookieMaxAgeDays: 365`，须重启 DSH 生效）后重新铸造。
+
+**本机浏览器（非门户）**：在启动 DSH 的终端里找 `dsh web: http://127.0.0.1:3080/?token=…`
+那行打开一次即可（authority 必须与地址栏一致：`127.0.0.1` 与 `localhost` 是两枚不同
+cookie）。
+
 ## 节点隧道不上线
 
 **现象**：门户卡片灰（离线）；插件状态行显示「frpc 运行中，尚未登录枢纽」或
