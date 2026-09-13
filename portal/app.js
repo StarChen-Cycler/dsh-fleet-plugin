@@ -35,14 +35,36 @@
       });
   }
 
+  // Turn a rejected fetch into text a human can act on. A hub URL carrying
+  // embedded credentials makes every relative request throw before it reaches
+  // the network, which used to look exactly like an empty fleet.
+  function describeFetchError(error) {
+    var message = error && error.message ? String(error.message) : String(error);
+    if (message.indexOf('credentials') !== -1) {
+      return '页面 URL 内嵌了账号密码，浏览器因此拒绝了所有相对请求；请改用登录框输入门户密码后重新打开本页。';
+    }
+    return message;
+  }
+
+  // The diagnostics line is the one place a failure becomes visible; render()
+  // clears the grid, so this element lives outside it.
+  function setDiag(text) {
+    var box = document.getElementById('diag');
+    if (box) box.textContent = text || '';
+  }
+
   function loadNodes() {
     return fetchJson('/nodes.json')
       .then(function (rows) {
-        return (rows || []).map(function (r) {
+        var nodes = (rows || []).map(function (r) {
           return { slug: String(r.slug || ''), port: r.port };
         }).filter(function (n) { return n.slug !== ''; });
+        return { nodes: nodes, error: null };
       })
-      .catch(function () { return []; }); // hub unreachable → empty grid, keep polling
+      .catch(function (error) {
+        // Keep polling, but say why the grid cannot fill.
+        return { nodes: [], error: describeFetchError(error) };
+      });
   }
 
   function loadStatus(slug) {
@@ -116,12 +138,32 @@
 
   function refresh() {
     document.getElementById('refresh-line').textContent = '更新于 ' + new Date().toLocaleTimeString();
-    loadNodes().then(function (nodes) {
-      Promise.all(nodes.map(function (n) {
+    loadNodes().then(function (result) {
+      if (result.error !== null) {
+        setDiag('节点列表加载失败：' + result.error);
+        render([]);
+        return;
+      }
+      if (result.nodes.length === 0) {
+        setDiag('');
+        render([]);
+        return;
+      }
+      Promise.all(result.nodes.map(function (n) {
         return loadStatus(n.slug).then(function (status) {
           return { slug: n.slug, online: status !== null, status: status };
         });
-      })).then(render);
+      })).then(function (results) {
+        var offline = results.filter(function (r) { return !r.online; }).length;
+        if (offline === results.length) {
+          setDiag('已列出 ' + results.length + ' 个节点，但探针全部失败：请确认浏览器已通过各节点的门户密码（与门户相同），且节点在线。');
+        } else if (offline > 0) {
+          setDiag('有 ' + offline + ' 个节点探针失败，其余正常。');
+        } else {
+          setDiag('');
+        }
+        render(results);
+      });
     });
   }
 

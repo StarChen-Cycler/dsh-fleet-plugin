@@ -21,9 +21,12 @@ __TLS_BLOCK__
 		}
 	}
 
-	# Fleet portal static page.
+	# Fleet portal static page. no-store: the page, its assets and nodes.json
+	# must never be served stale — a cached copy hides both new node rows and
+	# portal updates from the operator.
 	handle {
 		root * /var/www/fleet-portal
+		header Cache-Control "no-store"
 		file_server
 	}
 }

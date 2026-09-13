@@ -33,21 +33,23 @@ function makeEl(tag) {
   return el;
 }
 
-function makeDoc(grid, hint, refreshLine, hubLine) {
+function makeDoc(grid, hint, refreshLine, hubLine, diag) {
   return {
     createElement: (tag) => makeEl(tag),
-    getElementById: (id) => ({ grid, hint, 'refresh-line': refreshLine, 'hub-line': hubLine }[id] || makeEl('div')),
+    getElementById: (id) => ({ grid, hint, 'refresh-line': refreshLine, 'hub-line': hubLine, diag }[id] || makeEl('div')),
   };
 }
 
-function boot({ nodes, nodeStatus }) {
+function boot({ nodes, nodeStatus, nodesError }) {
   const grid = makeEl('main');
   const hint = makeEl('p');
   const refreshLine = makeEl('span');
   const hubLine = makeEl('span');
+  const diag = makeEl('p');
   let intervalCb = null;
   const fetch = async (url) => {
     if (url === '/nodes.json') {
+      if (nodesError) throw new Error(nodesError);
       return { ok: true, json: async () => nodes() };
     }
     if (url.includes('/dsh-status')) {
@@ -57,7 +59,7 @@ function boot({ nodes, nodeStatus }) {
     return { ok: false, status: 404, json: async () => ({}) };
   };
   const sandbox = {
-    document: makeDoc(grid, hint, refreshLine, hubLine),
+    document: makeDoc(grid, hint, refreshLine, hubLine, diag),
     location: { hostname: 'hub.example.com', port: '8443', host: 'hub.example.com:8443' },
     fetch,
     setInterval: (cb) => { intervalCb = cb; return 1; },
@@ -66,7 +68,7 @@ function boot({ nodes, nodeStatus }) {
   };
   vm.createContext(sandbox);
   vm.runInContext(APP_SRC, sandbox);
-  return { grid, hint, sandbox, poll: async () => { intervalCb(); await new Promise((r) => setTimeout(r, 0)); await new Promise((r) => setTimeout(r, 0)); } };
+  return { grid, hint, diag, sandbox, poll: async () => { intervalCb(); await new Promise((r) => setTimeout(r, 0)); await new Promise((r) => setTimeout(r, 0)); } };
 }
 
 function allText(el) {
@@ -102,4 +104,29 @@ test('portal grays a node on the next poll after its probe fails (10s poll ≪ 6
   up = false; // node probe starts failing
   await poll();
   assert.ok(grid.children[0].className.includes('offline'), 'node turns gray within one poll cycle');
+});
+
+test('portal names the reason when the node list itself cannot load', async () => {
+  const { diag } = boot({
+    nodesError: "Failed to execute 'fetch' on 'Window': Request cannot be constructed from a URL that includes credentials",
+    nodes: () => [],
+    nodeStatus: () => null,
+  });
+  await new Promise((r) => setTimeout(r, 10));
+
+  assert.ok(diag.textContent.includes('节点列表加载失败'), 'failure is surfaced, not swallowed');
+  assert.ok(diag.textContent.includes('登录框'), 'the embedded-credentials case gets actionable wording');
+});
+
+test('portal summarizes a total probe failure instead of showing a bare empty grid', async () => {
+  const { grid, diag } = boot({
+    nodes: () => [{ slug: 'home-pc', port: 6101 }, { slug: 'a6000', port: 6102 }],
+    nodeStatus: () => null, // every probe fails
+  });
+  await new Promise((r) => setTimeout(r, 10));
+
+  const cards = grid.children.filter((c) => c.className.includes('card'));
+  assert.equal(cards.length, 2, 'both nodes still render');
+  assert.ok(cards.every((c) => c.className.includes('offline')), 'they render offline');
+  assert.ok(diag.textContent.includes('探针全部失败'), 'the aggregate failure is explained');
 });

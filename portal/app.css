@@ -58,4 +58,5 @@ body {
 .metric-unit { color: var(--muted); font-size: 10px; }
 .meta { margin-top: 10px; color: var(--muted); font-size: 12px; }
 .hint { grid-column: 1 / -1; color: var(--muted); }
+.diag { margin: 0; padding: 0 16px 12px; color: var(--off); font-size: 12px; }
 .foot { padding: 0 16px 20px; color: var(--muted); font-size: 11px; }
