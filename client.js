@@ -138,6 +138,9 @@ window.__ModuleLoader__.load({
 
     return {
       name: 'dsh-fleet-client',
+      // 0.1.5 的 shell 并发创建所有 client entry，一次性 ctx.get('slots') 会与
+      // slots 提供者竞态并静默放弃；声明硬依赖让 fiber 等它到位。
+      inject: ['slots'],
       apply(ctx) {
         const slots = ctx.get('slots');
         if (slots === undefined) return;
